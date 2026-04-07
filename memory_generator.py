@@ -9,13 +9,108 @@ import os
 import base64
 import io
 import anthropic
+from openai import OpenAI
 from PIL import Image
-from prompt_builder import build_memory_prompt
+from prompt_builder import build_memory_prompt, build_insight_prompt, build_search_prompt, build_daily_comment_prompt
 
 # ── 설정 ──────────────────────────────────────────────────
 CLAUDE_MODEL = "claude-sonnet-4-5"
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 # ────────────────────────────────────────────────────────────
+
+
+def generate_daily_comment(memories: list) -> str:
+    """
+    memories: [{"title", "summary", "tags"}, ...]
+    returns: 한마디 텍스트
+    """
+    prompt = build_daily_comment_prompt(memories)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            comment = str(data.get("comment", "")).strip()
+            if comment:
+                return comment
+    except Exception as e:
+        raise RuntimeError(f"AI 한마디 생성 실패: {e}")
+
+    return "오늘도 소중한 순간을 기록해보세요 ✨"
+
+
+def parse_search_query(query: str) -> dict:
+    """
+    query: 사용자 자연어 검색어
+    returns: {"people": [], "tags": [], "locations": [], "yearMonth": null, "keywords": []}
+    """
+    prompt = build_search_prompt(query)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            return {
+                "people": data.get("people", []),
+                "tags": data.get("tags", []),
+                "locations": data.get("locations", []),
+                "yearMonth": data.get("yearMonth"),
+                "keywords": data.get("keywords", []),
+                "sentiment": data.get("sentiment")
+            }
+    except Exception as e:
+        raise RuntimeError(f"검색 파싱 AI 호출 실패: {e}")
+
+    return {"people": [], "tags": [], "locations": [], "yearMonth": None, "keywords": [query], "sentiment": None}
+
+
+def generate_insight_with_ai(year_month: str, memories: list) -> str:
+    """
+    year_month: "2026-03"
+    memories: [{"date", "title", "summary", "tags", "locations", "people"}, ...]
+    returns: insight 텍스트
+    """
+    prompt = build_insight_prompt(year_month, memories)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            insight = str(data.get("insight", "")).strip()
+            if insight:
+                return insight
+    except Exception as e:
+        raise RuntimeError(f"인사이트 AI 호출 실패: {e}")
+
+    return f"이번 달도 소중한 기억들을 쌓으셨네요."
+
+
+def generate_embedding(text: str) -> list:
+    """텍스트를 임베딩 벡터로 변환"""
+    response = openai_client.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"
+    )
+    return response.data[0].embedding
 
 
 def generate_memory_with_ai(records: list, photo_paths: list = []) -> dict:
@@ -111,8 +206,12 @@ def _parse_response(raw: str, records: list) -> dict:
             else:
                 people = []
 
+            _allowed_emotions = ["😊 즐거운", "🥰 설레는", "😌 평온한", "😤 지친", "😢 힘든", "🤩 신나는", "😐 평범한"]
+            emotion_raw = str(data.get("emotion", "")).strip()
+            emotion = emotion_raw if emotion_raw in _allowed_emotions else "😐 평범한"
+
             if title and summary:
-                return {"title": title, "summary": summary, "tags": tags, "people": people}
+                return {"title": title, "summary": summary, "tags": tags, "people": people, "emotion": emotion}
     except (json.JSONDecodeError, KeyError):
         pass
 
@@ -139,4 +238,4 @@ def _rule_based_fallback(records: list) -> dict:
         tags.append(location.split()[-1] if " " in location else location)
     tags += ["기억", "하루"]
 
-    return {"title": title, "summary": summary[:100], "tags": tags[:5], "people": []}
+    return {"title": title, "summary": summary[:100], "tags": tags[:5], "people": [], "emotion": "😐 평범한"}
