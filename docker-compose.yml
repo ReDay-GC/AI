@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  spring-boot:
+    image: jinsung0927/reday:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - fastapi
+
+  fastapi:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: always
