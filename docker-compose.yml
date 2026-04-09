@@ -1,13 +1,6 @@
 version: '3.8'
 
 services:
-  spring-boot:
-    image: jinsung0927/reday:latest
-    ports:
-      - "8080:8080"
-    depends_on:
-      - fastapi
-
   fastapi:
     build: .
     ports:
