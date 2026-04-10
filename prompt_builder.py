@@ -267,5 +267,56 @@ def build_keyword_extraction_prompt(memo_text: str, stt_text: str) -> str:
 
 ## 텍스트 분석, 키워드 추출 함수 2개 추가 (4/10 10:24)
 
+def build_tag_classification_prompt(text: str) -> str:
+    return f"""너는 사용자의 기억을 태그로 분류하는 AI야.
+
+입력:
+{text}
+
+허용 태그:
+여행, 카페, 산책, 공부, 운동, 유흥, 자연, 문화생활, 쇼핑, 식사, 휴식
+
+규칙:
+1. 입력 내용에 맞는 태그만 1~5개 선택해.
+2. 반드시 위 목록에서만 선택해.
+3. 없는 내용은 만들지 마.
+4. JSON 형식으로만 응답해.
+
+출력 형식:
+{{"tags": ["태그1", "태그2"]}}"""
+
+def build_activity_classification_prompt(text: str) -> str:
+    return f"""너는 사용자의 기억 활동 유형을 분류하는 AI야.
+
+입력:
+{text}
+
+활동 유형 후보:
+여행, 카페, 산책, 공부, 운동, 유흥, 자연, 문화생활, 쇼핑, 식사, 휴식
+
+규칙:
+1. 가장 적절한 활동 유형 1개 선택
+2. JSON 형식으로만 응답
+
+출력 형식:
+{{"activity_type": "활동유형"}}"""
+
+def build_search_keyword_prompt(query: str) -> str:
+    return f"""너는 검색 키워드 추출 AI야.
+
+입력:
+{query}
+
+규칙:
+1. 핵심 단어만 추출
+2. 중복 제거
+3. 최대 5개
+4. JSON 형식으로만 응답
+
+출력 형식:
+{{"keywords": ["키워드1", "키워드2"]}}"""
+
+
+
 
 

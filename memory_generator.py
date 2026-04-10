@@ -11,7 +11,17 @@ import io
 import anthropic
 from openai import OpenAI
 from PIL import Image
-from prompt_builder import build_memory_prompt, build_insight_prompt, build_search_prompt, build_daily_comment_prompt
+from prompt_builder import (
+    build_memory_prompt,
+    build_insight_prompt,
+    build_search_prompt,
+    build_daily_comment_prompt,
+    build_text_analysis_prompt,
+    build_keyword_extraction_prompt,
+    build_tag_classification_prompt,
+    build_activity_classification_prompt,
+    build_search_keyword_prompt,
+)
 
 # ── 설정 ──────────────────────────────────────────────────
 CLAUDE_MODEL = "claude-sonnet-4-5"
@@ -239,3 +249,144 @@ def _rule_based_fallback(records: list) -> dict:
     tags += ["기억", "하루"]
 
     return {"title": title, "summary": summary[:100], "tags": tags[:5], "people": [], "emotion": "😐 평범한"}
+
+def analyze_record_text(memo_text: str, stt_text: str) -> dict:
+    """
+    memo_text, stt_text를 기반으로 기록 텍스트를 분석
+    returns:
+    {
+        "summary": str,
+        "main_topic": str,
+        "emotion": str,
+        "activity_hint": str
+    }
+    """
+    prompt = build_text_analysis_prompt(memo_text, stt_text)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            return {
+                "summary": str(data.get("summary", "")).strip(),
+                "main_topic": str(data.get("main_topic", "")).strip(),
+                "emotion": str(data.get("emotion", "중립")).strip() or "중립",
+                "activity_hint": str(data.get("activity_hint", "")).strip(),
+            }
+    except Exception as e:
+        raise RuntimeError(f"기록 텍스트 분석 AI 호출 실패: {e}")
+
+    return {
+        "summary": "",
+        "main_topic": "",
+        "emotion": "중립",
+        "activity_hint": ""
+    }
+
+def extract_record_keywords(memo_text: str, stt_text: str) -> dict:
+    """
+    memo_text, stt_text를 기반으로 핵심 키워드 추출
+    returns:
+    {
+        "keywords": [str, ...]
+    }
+    """
+    prompt = build_keyword_extraction_prompt(memo_text, stt_text)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            keywords = data.get("keywords", [])
+            if isinstance(keywords, list):
+                keywords = [
+                    str(k).strip()
+                    for k in keywords
+                    if str(k).strip()
+                ]
+                # 중복 제거
+                keywords = list(dict.fromkeys(keywords))
+                return {"keywords": keywords}
+    except Exception as e:
+        raise RuntimeError(f"키워드 추출 AI 호출 실패: {e}")
+
+    return {"keywords": []}
+
+def classify_memory_tags(text: str) -> dict:
+    prompt = build_tag_classification_prompt(text)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            return {"tags": data.get("tags", [])}
+    except Exception as e:
+        raise RuntimeError(f"태그 분류 실패: {e}")
+
+    return {"tags": []}
+
+def classify_activity_type(text: str) -> dict:
+    prompt = build_activity_classification_prompt(text)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=128,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            return {"activity_type": data.get("activity_type", "")}
+    except Exception as e:
+        raise RuntimeError(f"활동 유형 분류 실패: {e}")
+
+    return {"activity_type": ""}
+
+def extract_search_keywords(query: str) -> dict:
+    prompt = build_search_keyword_prompt(query)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            keywords = data.get("keywords", [])
+            if isinstance(keywords, list):
+                keywords = list(dict.fromkeys([str(k).strip() for k in keywords if k]))
+                return {"keywords": keywords}
+    except Exception as e:
+        raise RuntimeError(f"키워드 추출 실패: {e}")
+
+    return {"keywords": []}
+
+
+
+
+
+
+

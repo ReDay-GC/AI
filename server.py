@@ -10,7 +10,18 @@ import os
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
-from memory_generator import generate_memory_with_ai, generate_insight_with_ai, parse_search_query, generate_daily_comment, generate_embedding
+from memory_generator import (
+    generate_memory_with_ai,
+    generate_insight_with_ai,
+    parse_search_query,
+    generate_daily_comment,
+    generate_embedding,
+    analyze_record_text,
+    extract_record_keywords,
+    classify_memory_tags,
+    classify_activity_type,
+    extract_search_keywords,
+)
 from openai import OpenAI
 
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -97,6 +108,35 @@ class ParseSearchResponse(BaseModel):
     yearMonth: Optional[str] = None
     keywords: List[str] = []
     sentiment: Optional[str] = None
+
+class ExtractSearchKeywordsRequest(BaseModel):
+    query: str
+
+
+class ExtractSearchKeywordsResponse(BaseModel):
+    keywords: List[str] = []
+
+# 추가: 기록 텍스트 분석 요청/응답 모델
+class AnalyzeTextRequest(BaseModel):
+    memo_text: str = ""
+    stt_text: str = ""
+
+
+class AnalyzeTextResponse(BaseModel):
+    summary: str
+    main_topic: str
+    emotion: str
+    activity_hint: str
+
+
+# 추가: 기록 키워드 추출 요청/응답 모델
+class ExtractKeywordsRequest(BaseModel):
+    memo_text: str = ""
+    stt_text: str = ""
+
+
+class ExtractKeywordsResponse(BaseModel):
+    keywords: List[str] = []
 
 
 @app.get("/health")
@@ -205,3 +245,49 @@ async def search_semantic(req: SearchSemanticRequest):
     # 유사도 0.3 이상인 것만 반환
     ranked_ids = [mid for mid, score in scored if score >= 0.3]
     return SearchSemanticResponse(ranked_ids=ranked_ids)
+
+
+# 추가: 기록 텍스트 분석 API
+@app.post("/analyze-text", response_model=AnalyzeTextResponse)
+async def analyze_text(req: AnalyzeTextRequest):
+    if not req.memo_text.strip() and not req.stt_text.strip():
+        raise HTTPException(status_code=400, detail="memo_text와 stt_text가 모두 비어 있습니다")
+
+    result = analyze_record_text(req.memo_text, req.stt_text)
+
+    return AnalyzeTextResponse(
+        summary=result.get("summary", ""),
+        main_topic=result.get("main_topic", ""),
+        emotion=result.get("emotion", "중립"),
+        activity_hint=result.get("activity_hint", "")
+    )
+
+
+# 추가: 기록 키워드 추출 API
+@app.post("/extract-keywords", response_model=ExtractKeywordsResponse)
+async def extract_keywords(req: ExtractKeywordsRequest):
+    if not req.memo_text.strip() and not req.stt_text.strip():
+        raise HTTPException(status_code=400, detail="memo_text와 stt_text가 모두 비어 있습니다")
+
+    result = extract_record_keywords(req.memo_text, req.stt_text)
+
+    return ExtractKeywordsResponse(
+        keywords=result.get("keywords", [])
+    )
+    
+@app.post("/extract-search-keywords", response_model=ExtractSearchKeywordsResponse)
+async def extract_search_keywords_api(req: ExtractSearchKeywordsRequest):
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query가 비어 있습니다")
+
+    result = extract_search_keywords(req.query)
+
+    return ExtractSearchKeywordsResponse(
+        keywords=result.get("keywords", [])
+    )
+    
+    # /extract-keywords -> 기록 기반(memo_text, stt_text) 키워드 ㅊ출
+    # /parse-search -> 검색어 구조 분석
+    # /extract-search-keywords -> 검색어 핵심 키워드만 추출
+    
+    
