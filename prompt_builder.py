@@ -203,3 +203,69 @@ def build_memory_prompt(records):
 {{"title": "제목", "summary": "요약", "tags": ["태그1", "태그2"], "people": ["이름1", "이름2"], "emotion": "😊 즐거운"}}"""
 
     return prompt
+
+
+def build_text_analysis_prompt(memo_text: str, stt_text: str) -> str:
+    combined_text = f"""
+[메모]
+{memo_text or "없음"}
+
+[음성 변환 텍스트]
+{stt_text or "없음"}
+"""
+
+    prompt = f"""너는 사용자가 남긴 기록 텍스트를 분석하는 AI야.
+
+입력 기록:
+{combined_text}
+
+규칙:
+1. 메모와 음성 변환 텍스트를 함께 보고, 기록의 핵심 내용을 분석해.
+2. 없는 내용은 절대 만들지 마.
+3. summary는 기록 전체를 1문장으로 자연스럽게 요약해.
+4. main_topic은 이 기록의 핵심 주제를 짧게 정리해.
+5. emotion은 다음 중 하나만 선택:
+   "긍정" / "중립" / "부정"
+6. activity_hint는 기록의 주요 활동을 짧게 표현해.
+   예: "외식", "대인관계", "공부", "운동", "산책", "휴식"
+7. 반드시 JSON 형식으로만 응답. 다른 말 하지 마.
+
+출력 형식:
+{{"summary": "한 줄 요약", "main_topic": "핵심 주제", "emotion": "긍정", "activity_hint": "활동 힌트"}}"""
+
+    return prompt
+
+
+def build_keyword_extraction_prompt(memo_text: str, stt_text: str) -> str:
+    combined_text = f"""
+[메모]
+{memo_text or "없음"}
+
+[음성 변환 텍스트]
+{stt_text or "없음"}
+"""
+
+    prompt = f"""너는 사용자의 기록에서 검색에 유용한 핵심 키워드를 추출하는 AI야.
+
+입력 기록:
+{combined_text}
+
+규칙:
+1. 메모와 음성 변환 텍스트를 함께 보고 핵심 키워드를 추출해.
+2. 사람, 장소, 활동, 음식, 중요한 명사 위주로 뽑아.
+3. 너무 일반적인 단어는 제외해.
+   예: "오늘", "정말", "그냥", "너무"
+4. 중복은 제거해.
+5. 키워드는 3~7개 이내로 추출해.
+6. 없는 내용은 만들지 마.
+7. 반드시 JSON 형식으로만 응답. 다른 말 하지 마.
+
+출력 형식:
+{{"keywords": ["키워드1", "키워드2", "키워드3"]}}"""
+
+    return prompt
+
+## 텍스트 분석, 키워드 추출 함수 2개 추가 (4/10 10:24)
+
+
+
