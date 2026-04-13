@@ -7,11 +7,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+from collections import Counter
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
+import httpx
 from memory_generator import generate_memory_with_ai, generate_insight_with_ai, parse_search_query, generate_daily_comment, generate_embedding
 from openai import OpenAI
+
+SPRING_BOOT_BASE_URL = os.environ.get("SPRING_BOOT_BASE_URL", "http://15.164.99.114:8080")
+INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -64,6 +69,7 @@ class MemorySummaryInput(BaseModel):
 
 
 class GenerateInsightRequest(BaseModel):
+    user_id: int
     year_month: str
     memories: List[MemorySummaryInput]
 
@@ -99,12 +105,12 @@ class ParseSearchResponse(BaseModel):
     sentiment: Optional[str] = None
 
 
-@app.get("/health")
+@app.get("/health", summary="서버 상태 확인")
 def health():
     return {"status": "ok", "mode": "claude-api"}
 
 
-@app.post("/transcribe")
+@app.post("/transcribe", summary="음성 STT 변환")
 async def transcribe(file: UploadFile = File(...)):
     """음성 파일을 받아 Whisper로 텍스트 변환"""
     contents = await file.read()
@@ -119,7 +125,7 @@ async def transcribe(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"STT 실패: {e}")
 
 
-@app.post("/daily-comment", response_model=DailyCommentResponse)
+@app.post("/daily-comment", response_model=DailyCommentResponse, summary="오늘의 한마디 생성")
 async def daily_comment(req: DailyCommentRequest):
     if not req.memories:
         raise HTTPException(status_code=400, detail="memories가 비어 있습니다")
@@ -128,7 +134,7 @@ async def daily_comment(req: DailyCommentRequest):
     return DailyCommentResponse(comment=comment)
 
 
-@app.post("/parse-search", response_model=ParseSearchResponse)
+@app.post("/parse-search", response_model=ParseSearchResponse, summary="검색어 자연어 분석")
 async def parse_search(req: ParseSearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query가 비어 있습니다")
@@ -137,17 +143,78 @@ async def parse_search(req: ParseSearchRequest):
     return ParseSearchResponse(**result)
 
 
-@app.post("/generate-insight", response_model=GenerateInsightResponse)
+def _compute_top_people(memories: list) -> list:
+    counter = Counter()
+    for m in memories:
+        for person in m.get("people", []):
+            if person:
+                counter[person] += 1
+    return [{"name": name, "count": count} for name, count in counter.most_common()]
+
+
+def _compute_top_activities(memories: list) -> list:
+    total = len(memories)
+    if total == 0:
+        return []
+    counter = Counter()
+    for m in memories:
+        for tag in m.get("tags", []):
+            if tag:
+                counter[tag] += 1
+    return [
+        {"activityType": tag, "percentage": round(count / total * 100)}
+        for tag, count in counter.most_common()
+    ]
+
+
+async def _save_insight_to_spring_boot(user_id: int, year: int, month: int, insight_text: str, top_people: list, top_activities: list):
+    url = f"{SPRING_BOOT_BASE_URL}/api/analysis/monthly/insight"
+    headers = {
+        "X-Internal-Key": INTERNAL_API_KEY,
+        "Content-Type": "application/json"
+    }
+    body = {
+        "userId": user_id,
+        "year": year,
+        "month": month,
+        "insightText": insight_text,
+        "topPeople": top_people,
+        "topActivities": top_activities
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, json=body, headers=headers)
+        if response.status_code != 204:
+            raise RuntimeError(f"Spring Boot 저장 실패: {response.status_code} {response.text}")
+
+
+@app.post("/generate-insight", response_model=GenerateInsightResponse, summary="월간 인사이트 생성")
 async def generate_insight(req: GenerateInsightRequest):
     if not req.memories:
         raise HTTPException(status_code=400, detail="memories가 비어 있습니다")
 
     memories_dict = [m.model_dump() for m in req.memories]
     insight = generate_insight_with_ai(req.year_month, memories_dict)
+
+    try:
+        year, month = req.year_month.split("-")
+        top_people = _compute_top_people(memories_dict)
+        top_activities = _compute_top_activities(memories_dict)
+        await _save_insight_to_spring_boot(
+            user_id=req.user_id,
+            year=int(year),
+            month=int(month),
+            insight_text=insight,
+            top_people=top_people,
+            top_activities=top_activities
+        )
+        print(f"[generate-insight] Spring Boot 저장 완료: {req.year_month}")
+    except Exception as e:
+        print(f"[generate-insight] Spring Boot 저장 실패 (인사이트는 반환): {e}")
+
     return GenerateInsightResponse(insight=insight)
 
 
-@app.post("/generate-memory", response_model=GenerateMemoryResponse)
+@app.post("/generate-memory", response_model=GenerateMemoryResponse, summary="AI 기억 생성")
 async def generate_memory(req: GenerateMemoryRequest):
     if not req.records:
         raise HTTPException(status_code=400, detail="records가 비어 있습니다")
@@ -172,7 +239,7 @@ async def generate_memory(req: GenerateMemoryRequest):
     )
 
 
-@app.post("/search-semantic", response_model=SearchSemanticResponse)
+@app.post("/search-semantic", response_model=SearchSemanticResponse, summary="의미 기반 기억 검색")
 async def search_semantic(req: SearchSemanticRequest):
     """쿼리와 저장된 기억 임베딩들의 코사인 유사도로 순위 반환"""
     if not req.memories:
