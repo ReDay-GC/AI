@@ -204,3 +204,45 @@ def build_memory_prompt(records):
 {{"title": "제목", "summary": "요약", "tags": ["태그1", "태그2"], "people": ["이름1", "이름2"], "emotion": "😊 즐거운"}}"""
 
     return prompt
+
+def build_location_analysis_prompt(memories: list) -> str:
+    memory_lines = []
+
+    for m in memories:
+        title = m.get("title", "")
+        summary = m.get("summary", "")
+        locations = ", ".join(m.get("locations", [])) or "없음"
+        tags = ", ".join(m.get("tags", [])) or "없음"
+
+        memory_lines.append(
+            f"- 제목: {title}\n"
+            f"  요약: {summary}\n"
+            f"  장소: {locations}\n"
+            f"  태그: {tags}"
+        )
+
+    joined_memories = "\n".join(memory_lines)
+
+    prompt = f"""너는 사용자의 기억 데이터를 보고 장소 기반 패턴을 분석하는 AI야.
+
+기억 목록:
+{joined_memories}
+
+규칙:
+1. 기억 목록에 등장한 장소를 기준으로 자주 방문한 장소를 정리해.
+2. place_stats에는 장소별 방문 횟수와 대표 태그를 넣어.
+3. 대표 태그는 해당 장소와 가장 관련 있는 태그 1~3개만 넣어.
+4. analysis는 전체 장소 패턴을 한두 문장으로 자연스럽게 요약해.
+5. 없는 내용은 만들지 마.
+6. 반드시 JSON 형식으로만 응답해. 다른 말 하지 마.
+
+출력 형식:
+{{
+  "top_places": ["장소1", "장소2"],
+  "place_stats": [
+    {{"location": "장소1", "count": 3, "tags": ["태그1", "태그2"]}},
+    {{"location": "장소2", "count": 2, "tags": ["태그3"]}}
+  ],
+  "analysis": "장소 기반 분석 결과"
+}}"""
+    return prompt

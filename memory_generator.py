@@ -11,7 +11,18 @@ import io
 import anthropic
 from openai import OpenAI
 from PIL import Image
-from prompt_builder import build_memory_prompt, build_insight_prompt, build_search_prompt, build_daily_comment_prompt
+from prompt_builder import (
+    build_memory_prompt,
+    build_insight_prompt,
+    build_search_prompt,
+    build_daily_comment_prompt,
+    build_text_analysis_prompt,
+    build_keyword_extraction_prompt,
+    build_tag_classification_prompt,
+    build_activity_classification_prompt,
+    build_search_keyword_prompt,
+    build_location_analysis_prompt,
+)
 
 # ── 설정 ──────────────────────────────────────────────────
 CLAUDE_MODEL = "claude-sonnet-4-5"
@@ -239,3 +250,88 @@ def _rule_based_fallback(records: list) -> dict:
     tags += ["기억", "하루"]
 
     return {"title": title, "summary": summary[:100], "tags": tags[:5], "people": [], "emotion": "😐 평범한"}
+
+def analyze_location_patterns(memories: list) -> dict:
+    """
+    memories:
+    [
+      {
+        "title": str,
+        "summary": str,
+        "locations": list[str],
+        "tags": list[str]
+      },
+      ...
+    ]
+
+    returns:
+    {
+      "top_places": list[str],
+      "place_stats": [
+        {"location": str, "count": int, "tags": list[str]}
+      ],
+      "analysis": str
+    }
+    """
+    prompt = build_location_analysis_prompt(memories)
+
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+
+        if match:
+            data = json.loads(match.group())
+
+            top_places = data.get("top_places", [])
+            place_stats = data.get("place_stats", [])
+            analysis = str(data.get("analysis", "")).strip()
+
+            if not isinstance(top_places, list):
+                top_places = []
+
+            if not isinstance(place_stats, list):
+                place_stats = []
+
+            cleaned_stats = []
+            for item in place_stats:
+                if not isinstance(item, dict):
+                    continue
+
+                location = str(item.get("location", "")).strip()
+                count = item.get("count", 0)
+                tags = item.get("tags", [])
+
+                if not isinstance(tags, list):
+                    tags = []
+
+                try:
+                    count = int(count)
+                except Exception:
+                    count = 0
+
+                if location:
+                    cleaned_stats.append({
+                        "location": location,
+                        "count": count,
+                        "tags": [str(t).strip() for t in tags if str(t).strip()]
+                    })
+
+            return {
+                "top_places": [str(p).strip() for p in top_places if str(p).strip()],
+                "place_stats": cleaned_stats,
+                "analysis": analysis
+            }
+
+    except Exception as e:
+        raise RuntimeError(f"장소 기반 기억 분석 실패: {e}")
+
+    return {
+        "top_places": [],
+        "place_stats": [],
+        "analysis": ""
+    }

@@ -12,7 +12,19 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 import httpx
-from memory_generator import generate_memory_with_ai, generate_insight_with_ai, parse_search_query, generate_daily_comment, generate_embedding
+from memory_generator import (
+    generate_memory_with_ai,
+    generate_insight_with_ai,
+    parse_search_query,
+    generate_daily_comment,
+    generate_embedding,
+    analyze_record_text,
+    extract_record_keywords,
+    classify_memory_tags,
+    classify_activity_type,
+    extract_search_keywords,
+    analyze_location_patterns,
+)
 from openai import OpenAI
 
 SPRING_BOOT_BASE_URL = os.environ.get("SPRING_BOOT_BASE_URL", "http://15.164.99.114:8080")
@@ -103,6 +115,29 @@ class ParseSearchResponse(BaseModel):
     yearMonth: Optional[str] = None
     keywords: List[str] = []
     sentiment: Optional[str] = None
+    
+    
+class LocationAnalysisMemoryInput(BaseModel):
+    title: str
+    summary: str
+    locations: List[str] = []
+    tags: List[str] = []
+
+
+class LocationAnalysisRequest(BaseModel):
+    memories: List[LocationAnalysisMemoryInput]
+
+
+class PlaceStat(BaseModel):
+    location: str
+    count: int
+    tags: List[str] = []
+
+
+class LocationAnalysisResponse(BaseModel):
+    top_places: List[str] = []
+    place_stats: List[PlaceStat] = []
+    analysis: str
 
 
 @app.get("/health", summary="서버 상태 확인")
@@ -272,3 +307,17 @@ async def search_semantic(req: SearchSemanticRequest):
     # 유사도 0.3 이상인 것만 반환
     ranked_ids = [mid for mid, score in scored if score >= 0.3]
     return SearchSemanticResponse(ranked_ids=ranked_ids)
+
+@app.post("/analyze-locations", response_model=LocationAnalysisResponse)
+async def analyze_locations(req: LocationAnalysisRequest):
+    if not req.memories:
+        raise HTTPException(status_code=400, detail="memories가 비어 있습니다")
+
+    memories_dict = [m.model_dump() for m in req.memories]
+    result = analyze_location_patterns(memories_dict)
+
+    return LocationAnalysisResponse(
+        top_places=result.get("top_places", []),
+        place_stats=result.get("place_stats", []),
+        analysis=result.get("analysis", "")
+    )
