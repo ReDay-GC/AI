@@ -258,7 +258,15 @@ async def generate_memory(req: GenerateMemoryRequest):
     result = generate_memory_with_ai(records_dict, req.photo_data)
 
     # 제목 + 요약을 합쳐서 임베딩 생성
-    embed_text = f"{result['title']} {result['summary']}"
+    embed_text = (
+
+    f"{result['title']} "
+
+    f"{result['summary']} "
+
+    f"{' '.join(result['tags'])}"
+
+)
     try:
         embedding = generate_embedding(embed_text)
     except Exception:
@@ -308,7 +316,8 @@ async def search_semantic(req: SearchSemanticRequest):
     ranked_ids = [mid for mid, score in scored if score >= 0.3]
     return SearchSemanticResponse(ranked_ids=ranked_ids)
 
-@app.post("/analyze-locations", response_model=LocationAnalysisResponse)
+
+@app.post("/analyze-locations", response_model=LocationAnalysisResponse, summary="장소 기반 기억 분석")
 async def analyze_locations(req: LocationAnalysisRequest):
     if not req.memories:
         raise HTTPException(status_code=400, detail="memories가 비어 있습니다")
@@ -320,4 +329,112 @@ async def analyze_locations(req: LocationAnalysisRequest):
         top_places=result.get("top_places", []),
         place_stats=result.get("place_stats", []),
         analysis=result.get("analysis", "")
+    )
+
+
+class AnalyzeTextRequest(BaseModel):
+    memo_text: str = ""
+    stt_text: str = ""
+
+
+class AnalyzeTextResponse(BaseModel):
+    summary: str
+    main_topic: str
+    emotion: str
+    activity_hint: str
+
+
+class ExtractKeywordsRequest(BaseModel):
+    memo_text: str = ""
+    stt_text: str = ""
+
+
+class ExtractKeywordsResponse(BaseModel):
+    keywords: List[str] = []
+
+
+class ClassifyTagsRequest(BaseModel):
+    text: str
+
+
+class ClassifyTagsResponse(BaseModel):
+    tags: List[str] = []
+
+
+class ClassifyActivityRequest(BaseModel):
+    text: str
+
+
+class ClassifyActivityResponse(BaseModel):
+    activity_type: str
+
+
+class ExtractSearchKeywordsRequest(BaseModel):
+    query: str
+
+
+class ExtractSearchKeywordsResponse(BaseModel):
+    keywords: List[str] = []
+
+
+@app.post("/analyze-text", response_model=AnalyzeTextResponse, summary="기록 텍스트 분석")
+async def analyze_text(req: AnalyzeTextRequest):
+    if not req.memo_text.strip() and not req.stt_text.strip():
+        raise HTTPException(status_code=400, detail="memo_text와 stt_text가 모두 비어 있습니다")
+
+    result = analyze_record_text(req.memo_text, req.stt_text)
+
+    return AnalyzeTextResponse(
+        summary=result.get("summary", ""),
+        main_topic=result.get("main_topic", ""),
+        emotion=result.get("emotion", "중립"),
+        activity_hint=result.get("activity_hint", "")
+    )
+
+
+@app.post("/extract-keywords", response_model=ExtractKeywordsResponse, summary="기록 기반 키워드 추출")
+async def extract_keywords(req: ExtractKeywordsRequest):
+    if not req.memo_text.strip() and not req.stt_text.strip():
+        raise HTTPException(status_code=400, detail="memo_text와 stt_text가 모두 비어 있습니다")
+
+    result = extract_record_keywords(req.memo_text, req.stt_text)
+
+    return ExtractKeywordsResponse(
+        keywords=result.get("keywords", [])
+    )
+
+
+@app.post("/classify-tags", response_model=ClassifyTagsResponse, summary="태그 기반 기억 분류")
+async def classify_tags(req: ClassifyTagsRequest):
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text가 비어 있습니다")
+
+    result = classify_memory_tags(req.text)
+
+    return ClassifyTagsResponse(
+        tags=result.get("tags", [])
+    )
+
+
+@app.post("/classify-activity", response_model=ClassifyActivityResponse, summary="활동 유형 분류")
+async def classify_activity(req: ClassifyActivityRequest):
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text가 비어 있습니다")
+
+    result = classify_activity_type(req.text)
+
+    return ClassifyActivityResponse(
+        activity_type=result.get("activity_type", "")
+    )
+
+
+@app.post("/extract-search-keywords", response_model=ExtractSearchKeywordsResponse, summary="검색어 기반 키워드 추출")
+async def extract_search_keywords_api(req: ExtractSearchKeywordsRequest):
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="query가 비어 있습니다")
+
+    result = extract_search_keywords(req.query)
+
+    return ExtractSearchKeywordsResponse(
+        keywords=result.get("keywords", [])
     )

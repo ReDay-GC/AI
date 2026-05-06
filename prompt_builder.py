@@ -192,6 +192,11 @@ def build_memory_prompt(records):
    - 포함 X: "주희 뒷담했다", "철수 얘기했다" → 주희, 철수는 제외
 8. [시간 흐름 연속성 - summary 작성 시] 앞선 기록에서 함께한 사람이 이후 기록에서 명시되지 않더라도, 시간상 자연스럽게 이어지는 흐름이면 같이 있었을 가능성을 summary에 자연스럽게 반영해도 좋아. 단, people 배열 값은 이 규칙의 영향을 받지 않으며 7번 규칙만 따른다.
 9. 반드시 JSON 형식으로만 응답. 다른 말 하지 마.
+10. 장소가 특정 카테고리에 속하면 일반화된 태그도 함께 추가해.
+예:
+- 에버랜드 → 놀이공원
+- 스타벅스 → 카페
+- CGV → 영화관, 문화생활
 
 좋은 summary 예시:
 - "주희와 함께한 치맥 한 잔, 로또와의 한강 산책까지. 사람과 동물로 가득했던 하루였어요."
@@ -246,3 +251,129 @@ def build_location_analysis_prompt(memories: list) -> str:
   "analysis": "장소 기반 분석 결과"
 }}"""
     return prompt
+def build_keyword_extraction_prompt(memo_text: str, stt_text: str) -> str:
+    combined_text = f"""
+[메모]
+{memo_text or "없음"}
+
+[음성 변환 텍스트]
+{stt_text or "없음"}
+"""
+
+    return f"""너는 사용자의 기록에서 핵심 키워드를 추출하는 AI야.
+
+입력 기록:
+{combined_text}
+
+규칙:
+1. 메모와 음성 변환 텍스트를 함께 보고 핵심 키워드를 추출해.
+2. 사람, 장소, 활동, 음식, 중요한 명사 위주로 뽑아.
+3. 너무 일반적인 단어는 제외해.
+4. 중복은 제거해.
+5. 키워드는 3~7개 이내로 추출해.
+6. 없는 내용은 만들지 마.
+7. 반드시 JSON 형식으로만 응답해. 다른 말 하지 마.
+
+출력 형식:
+{{"keywords": ["키워드1", "키워드2", "키워드3"]}}"""
+def build_tag_classification_prompt(text: str) -> str:
+    allowed_tags_str = ", ".join(ALLOWED_TAGS)
+
+    return f"""너는 사용자의 기억을 태그로 분류하는 AI야.
+
+입력:
+{text}
+
+허용 태그:
+{allowed_tags_str}
+
+규칙:
+1. 입력 내용에 맞는 태그만 1~5개 선택해.
+2. 반드시 위 목록에서만 선택해.
+3. 없는 내용은 만들지 마.
+4. 반드시 JSON 형식으로만 응답해.
+
+출력 형식:
+{{"tags": ["태그1", "태그2"]}}"""
+def build_activity_classification_prompt(text: str) -> str:
+    allowed_tags_str = ", ".join(ALLOWED_TAGS)
+
+    return f"""너는 사용자의 기억 활동 유형을 분류하는 AI야.
+
+입력:
+{text}
+
+활동 유형 후보:
+{allowed_tags_str}
+
+규칙:
+1. 가장 적절한 활동 유형 1개를 선택해.
+2. 반드시 위 후보 중 하나만 사용해.
+3. 없는 내용은 만들지 마.
+4. 반드시 JSON 형식으로만 응답해.
+
+출력 형식:
+{{"activity_type": "활동유형"}}"""
+def build_search_keyword_prompt(query: str) -> str:
+    return f"""너는 사용자의 검색어에서 핵심 키워드만 추출하는 AI야.
+
+입력:
+{query}
+
+규칙:
+1. 사람, 장소, 활동, 음식 등 검색에 중요한 단어만 추출해.
+2. 중복 제거
+3. 1~5개 이내
+4. 없는 내용은 만들지 마.
+5. 반드시 JSON 형식으로만 응답해.
+
+출력 형식:
+{{"keywords": ["키워드1", "키워드2"]}}"""
+
+    combined = f"메모: {memo_text}\n음성: {stt_text}"
+
+    return f"""너는 사용자의 기록 텍스트를 분석하는 AI야.
+
+입력:
+{combined}
+
+다음 규칙을 따라 JSON으로만 응답해.
+
+1. summary: 전체 내용을 한 줄로 요약
+2. main_topic: 핵심 주제 (예: 카페, 여행, 공부)
+3. emotion: 감정 (예: 즐거움, 평온, 피곤)
+4. activity_hint: 어떤 활동인지 (예: 카페 방문, 산책, 회의)
+
+출력 형식:
+{{
+  "summary": "",
+  "main_topic": "",
+  "emotion": "",
+  "activity_hint": ""
+}}
+"""
+
+
+def build_text_analysis_prompt(memo_text: str, stt_text: str) -> str:
+    combined = f"메모: {memo_text or '없음'}\n음성: {stt_text or '없음'}"
+
+    return f"""너는 사용자의 기록 텍스트를 분석하는 AI야.
+
+입력:
+{combined}
+
+다음 규칙을 따라 반드시 JSON으로만 응답해.
+
+1. summary: 전체 내용을 한 줄로 요약
+2. main_topic: 핵심 주제 (예: 카페, 여행, 공부, 산책)
+3. emotion: 감정 (예: 즐거움, 평온, 피곤, 설렘)
+4. activity_hint: 어떤 활동인지 짧게 설명 (예: 카페 방문, 산책, 식사, 회의)
+
+출력 형식:
+{{
+  "summary": "",
+  "main_topic": "",
+  "emotion": "",
+  "activity_hint": ""
+}}
+"""
