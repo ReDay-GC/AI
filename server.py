@@ -9,7 +9,7 @@ load_dotenv()
 import os
 from collections import Counter
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import httpx
 from memory_generator import (
@@ -31,7 +31,42 @@ SPRING_BOOT_BASE_URL = os.environ.get("SPRING_BOOT_BASE_URL", "http://15.164.99.
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+CATEGORY_KEYWORDS = {
+    "놀이공원": ["놀이공원", "에버랜드", "롯데월드", "테마파크", "롤러코스터", "놀이기구", "퍼레이드"],
+    "카페": ["카페", "스타벅스", "투썸", "이디야", "커피"],
+    "영화관": ["영화관", "CGV", "메가박스", "롯데시네마", "영화"],
+    "바다": ["바다", "해변", "해운대", "광안리", "강릉", "제주"],
+    "운동": ["운동", "헬스", "헬스장", "러닝", "요가", "필라테스"],
+    "공부": ["공부", "학습", "시험", "과제", "도서관"],
+}
 
+EMOTION_KEYWORDS = {
+    "재밌": ["재밌", "즐거", "신나", "행복", "웃", "놀"],
+    "행복": ["행복", "즐거", "좋았", "설레"],
+    "힘들": ["힘들", "지친", "피곤", "속상", "슬픈"],
+}
+
+
+def keyword_bonus(query: str, memory_text: str) -> float:
+    query = query.lower()
+    memory_text = memory_text.lower()
+
+    bonus = 0.0
+
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if category.lower() in query:
+            if any(keyword.lower() in memory_text for keyword in keywords):
+                bonus += 0.25
+
+    for emotion, keywords in EMOTION_KEYWORDS.items():
+        if emotion.lower() in query:
+            if any(keyword.lower() in memory_text for keyword in keywords):
+                bonus += 0.2
+
+    if query and query in memory_text:
+        bonus += 0.15
+
+    return bonus
 app = FastAPI(title="ReDay AI Memory Server (임시 로컬)")
 
 
@@ -56,15 +91,17 @@ class GenerateMemoryResponse(BaseModel):
     emotion: str = "😐 평범한"
     embedding: List[float] = []
 
+#백엔드가 memoryID로 보내도 됨
+class MemoryTextItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
 
-class MemoryEmbeddingItem(BaseModel):
-    memory_id: int
-    embedding: List[float]
+    memory_id: int = Field(alias="memoryId")
+    text: str
 
 
 class SearchSemanticRequest(BaseModel):
     query: str
-    memories: List[MemoryEmbeddingItem]
+    memories: List[MemoryTextItem]
 
 
 class SearchSemanticResponse(BaseModel):
@@ -281,39 +318,73 @@ async def generate_memory(req: GenerateMemoryRequest):
         embedding=embedding
     )
 
-
+#백엔드에서 memory_ids만 보내면 안됨. AI서버가 기억 내용 "직접" 봐야 키워드 가중치 줄 수 있음
 @app.post("/search-semantic", response_model=SearchSemanticResponse, summary="의미 기반 기억 검색")
 async def search_semantic(req: SearchSemanticRequest):
-    """쿼리와 저장된 기억 임베딩들의 코사인 유사도로 순위 반환"""
+    """쿼리와 기억 텍스트들의 코사인 유사도로 순위 반환"""
+
     if not req.memories:
         return SearchSemanticResponse(ranked_ids=[])
 
     try:
         query_embedding = generate_embedding(req.query)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"임베딩 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"쿼리 임베딩 생성 실패: {e}")
 
     def cosine_similarity(a: list, b: list) -> float:
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
+
         if norm_a == 0 or norm_b == 0:
             return 0.0
+
         return dot / (norm_a * norm_b)
 
-    scored = [
-        (item.memory_id, cosine_similarity(query_embedding, item.embedding))
-        for item in req.memories
-        if item.embedding
-    ]
+    scored = []
+
+    for item in req.memories:
+        print(
+            f"[memory] id={item.memory_id}, "
+            f"text={item.text}"
+        )
+
+        if not item.text.strip():
+            continue
+
+        try:
+            memory_embedding = generate_embedding(item.text)
+
+            embedding_score = cosine_similarity(
+                query_embedding,
+                memory_embedding
+            )
+
+            bonus = keyword_bonus(req.query, item.text)
+            final_score = embedding_score + bonus
+
+            scored.append((item.memory_id, final_score))
+
+            print(
+                f"[semantic] id={item.memory_id}, "
+                f"embedding={embedding_score:.4f}, "
+                f"bonus={bonus:.2f}, "
+                f"final={final_score:.4f}"
+            )
+
+        except Exception as e:
+            print(
+                f"[semantic] memory_id={item.memory_id} "
+                f"embedding 실패: {e}"
+            )
+
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    # 유사도 점수 로그 출력
-    for mid, score in scored:
-        print(f"[semantic] id={mid}, score={score:.4f}")
+    ranked_ids = [
+        mid for mid, score in scored
+        if score >= 0.3
+    ]
 
-    # 유사도 0.3 이상인 것만 반환
-    ranked_ids = [mid for mid, score in scored if score >= 0.3]
     return SearchSemanticResponse(ranked_ids=ranked_ids)
 
 
