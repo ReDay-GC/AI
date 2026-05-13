@@ -62,14 +62,9 @@ class MemoryEmbeddingItem(BaseModel):
     embedding: List[float]
 
 
-class MemoryTextItem(BaseModel):
-    memory_id: int
-    text: str
-
-
 class SearchSemanticRequest(BaseModel):
     query: str
-    memories: List[MemoryTextItem]
+    memories: List[MemoryEmbeddingItem]
 
 
 class SearchSemanticResponse(BaseModel):
@@ -289,54 +284,36 @@ async def generate_memory(req: GenerateMemoryRequest):
 
 @app.post("/search-semantic", response_model=SearchSemanticResponse, summary="의미 기반 기억 검색")
 async def search_semantic(req: SearchSemanticRequest):
-    """쿼리와 기억 텍스트들의 코사인 유사도로 순위 반환"""
-
+    """쿼리와 저장된 기억 임베딩들의 코사인 유사도로 순위 반환"""
     if not req.memories:
         return SearchSemanticResponse(ranked_ids=[])
 
     try:
         query_embedding = generate_embedding(req.query)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"쿼리 임베딩 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"임베딩 생성 실패: {e}")
 
     def cosine_similarity(a: list, b: list) -> float:
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
-
         if norm_a == 0 or norm_b == 0:
             return 0.0
-
         return dot / (norm_a * norm_b)
 
-    scored = []
-
-    for item in req.memories:
-        if not item.text.strip():
-            continue
-
-        try:
-            memory_embedding = generate_embedding(item.text)
-
-            score = cosine_similarity(
-                query_embedding,
-                memory_embedding
-            )
-
-            scored.append((item.memory_id, score))
-
-        except Exception as e:
-            print(f"[semantic] memory_id={item.memory_id} embedding 실패: {e}")
-
+    scored = [
+        (item.memory_id, cosine_similarity(query_embedding, item.embedding))
+        for item in req.memories
+        if item.embedding
+    ]
     scored.sort(key=lambda x: x[1], reverse=True)
 
     # 유사도 점수 로그 출력
     for mid, score in scored:
         print(f"[semantic] id={mid}, score={score:.4f}")
 
-    # 유사도 0.3 이상만 반환
+    # 유사도 0.3 이상인 것만 반환
     ranked_ids = [mid for mid, score in scored if score >= 0.3]
-
     return SearchSemanticResponse(ranked_ids=ranked_ids)
 
 

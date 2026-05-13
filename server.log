@@ -1,0 +1,6 @@
+INFO:     Started server process [36061]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('0.0.0.0INFO:     127.0.0.1:58078 - "GET /health HTTP/1.1" 200 OK
+ing for application shutdown.
+INFO:     Application shutdown complete.
