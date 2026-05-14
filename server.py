@@ -31,42 +31,45 @@ SPRING_BOOT_BASE_URL = os.environ.get("SPRING_BOOT_BASE_URL", "http://15.164.99.
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
 CATEGORY_KEYWORDS = {
     "놀이공원": ["놀이공원", "에버랜드", "롯데월드", "테마파크", "롤러코스터", "놀이기구", "퍼레이드"],
-    "카페": ["카페", "스타벅스", "투썸", "이디야", "커피"],
-    "영화관": ["영화관", "CGV", "메가박스", "롯데시네마", "영화"],
-    "바다": ["바다", "해변", "해운대", "광안리", "강릉", "제주"],
-    "운동": ["운동", "헬스", "헬스장", "러닝", "요가", "필라테스"],
-    "공부": ["공부", "학습", "시험", "과제", "도서관"],
+    "카페":    ["카페", "스타벅스", "투썸", "이디야", "커피"],
+    "영화관":  ["영화관", "CGV", "메가박스", "롯데시네마", "영화"],
+    "바다":    ["바다", "해변", "해운대", "광안리", "강릉", "제주"],
+    "운동":    ["운동", "헬스", "헬스장", "러닝", "요가", "필라테스", "달리기", "마라톤", "완주", "조깅"],
+    "공부":    ["공부", "학습", "시험", "과제", "도서관"],
+    "식사":    ["밥", "식사", "음식", "맛집", "식당", "맛"],
 }
 
-EMOTION_KEYWORDS = {
-    "재밌": ["재밌", "즐거", "신나", "행복", "웃", "놀"],
-    "행복": ["행복", "즐거", "좋았", "설레"],
-    "힘들": ["힘들", "지친", "피곤", "속상", "슬픈"],
-}
+SAD_WORDS     = ["슬픔", "슬픈", "힘듦", "힘든", "힘들", "지침", "지친", "피곤", "속상", "눈물"]
+HAPPY_WORDS   = ["행복", "즐거", "기쁨", "기쁜", "좋았"]
+EXCITED_WORDS = ["신남", "신나", "설레", "흥미", "기대"]
+ANGRY_WORDS   = ["화남", "화난", "화나", "짜증"]
+EMOTION_GROUPS = [SAD_WORDS, HAPPY_WORDS, EXCITED_WORDS, ANGRY_WORDS]
 
 
 def keyword_bonus(query: str, memory_text: str) -> float:
-    query = query.lower()
-    memory_text = memory_text.lower()
+    q = query.lower()
+    m = memory_text.lower()
 
     bonus = 0.0
 
     for category, keywords in CATEGORY_KEYWORDS.items():
-        if category.lower() in query:
-            if any(keyword.lower() in memory_text for keyword in keywords):
+        if any(kw in q for kw in keywords):
+            if any(kw in m for kw in keywords):
                 bonus += 0.25
+                break
 
-    for emotion, keywords in EMOTION_KEYWORDS.items():
-        if emotion.lower() in query:
-            if any(keyword.lower() in memory_text for keyword in keywords):
+    for group in EMOTION_GROUPS:
+        if any(w in q for w in group):
+            if any(w in m for w in group):
                 bonus += 0.2
-
-    if query and query in memory_text:
-        bonus += 0.15
+                break
 
     return bonus
+
+
 app = FastAPI(title="ReDay AI Memory Server (임시 로컬)")
 
 
@@ -90,6 +93,7 @@ class GenerateMemoryResponse(BaseModel):
     people: List[str] = []
     emotion: str = "😐 평범한"
     embedding: List[float] = []
+
 
 #백엔드가 memoryID로 보내도 됨
 class MemoryTextItem(BaseModel):
@@ -152,8 +156,8 @@ class ParseSearchResponse(BaseModel):
     yearMonth: Optional[str] = None
     keywords: List[str] = []
     sentiment: Optional[str] = None
-    
-    
+
+
 class LocationAnalysisMemoryInput(BaseModel):
     title: str
     summary: str
@@ -294,16 +298,11 @@ async def generate_memory(req: GenerateMemoryRequest):
     records_dict = [r.model_dump() for r in req.records]
     result = generate_memory_with_ai(records_dict, req.photo_data)
 
-    # 제목 + 요약을 합쳐서 임베딩 생성
     embed_text = (
-
-    f"{result['title']} "
-
-    f"{result['summary']} "
-
-    f"{' '.join(result['tags'])}"
-
-)
+        f"{result['title']} "
+        f"{result['summary']} "
+        f"{' '.join(result['tags'])}"
+    )
     try:
         embedding = generate_embedding(embed_text)
     except Exception:
@@ -317,6 +316,7 @@ async def generate_memory(req: GenerateMemoryRequest):
         emotion=result.get("emotion", "😐 평범한"),
         embedding=embedding
     )
+
 
 #백엔드에서 memory_ids만 보내면 안됨. AI서버가 기억 내용 "직접" 봐야 키워드 가중치 줄 수 있음
 @app.post("/search-semantic", response_model=SearchSemanticResponse, summary="의미 기반 기억 검색")
@@ -382,7 +382,7 @@ async def search_semantic(req: SearchSemanticRequest):
 
     ranked_ids = [
         mid for mid, score in scored
-        if score >= 0.3
+        if score >= 0.35
     ]
 
     return SearchSemanticResponse(ranked_ids=ranked_ids)
