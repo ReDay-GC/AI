@@ -217,7 +217,7 @@ def _parse_response(raw: str, records: list) -> dict:
             else:
                 people = []
 
-            _allowed_emotions = ["😊 즐거운", "🥰 설레는", "😌 평온한", "😤 지친", "😢 힘든", "🤩 신나는", "😐 평범한"]
+            _allowed_emotions = ["😊 즐거운", "🥰 설레는", "😌 평온한", "😤 지친", "😢 힘든", "🤩 신나는", "😐 평범한", "😡 화난"]
             emotion_raw = str(data.get("emotion", "")).strip()
             emotion = emotion_raw if emotion_raw in _allowed_emotions else "😐 평범한"
 
