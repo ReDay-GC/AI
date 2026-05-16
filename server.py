@@ -46,7 +46,7 @@ CATEGORY_KEYWORDS = {
 SAD_WORDS     = ["슬픔", "슬픈", "힘듦", "힘든", "힘들", "지침", "지친", "피곤", "속상", "눈물"]
 HAPPY_WORDS   = ["행복", "즐거", "기쁨", "기쁜", "좋았"]
 EXCITED_WORDS = ["신남", "신나", "설레", "흥미", "기대"]
-ANGRY_WORDS   = ["화남", "화난", "화나", "짜증"]
+ANGRY_WORDS   = ["화남", "화난", "화나", "짜증","분노", "분노한", "분노하다", "빡침", "빡치", "개화", "억울", "열받"]
 EMOTION_GROUPS = [SAD_WORDS, HAPPY_WORDS, EXCITED_WORDS, ANGRY_WORDS]
 
 
