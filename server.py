@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import re
 from collections import Counter
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field, ConfigDict
@@ -71,7 +72,12 @@ def keyword_bonus(query: str, memory_text: str) -> float:
 
 
 app = FastAPI(title="ReDay AI Memory Server (임시 로컬)")
+def normalize_query(query: str) -> str:
+    # 이름/단어 뒤 조사 제거
+    query = re.sub(r'(이랑|랑|와|과|이와)\s*', ' ', query)
 
+    # 공백 정리
+    return ' '.join(query.split())
 
 class RecordFragment(BaseModel):
     type: str                    # "TEXT", "PHOTO", "VOICE"
@@ -327,7 +333,9 @@ async def search_semantic(req: SearchSemanticRequest):
         return SearchSemanticResponse(ranked_ids=[])
 
     try:
-        query_embedding = generate_embedding(req.query)
+        normalized_query = normalize_query(req.query)
+        query_embedding = generate_embedding(normalized_query)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"쿼리 임베딩 생성 실패: {e}")
 
@@ -360,7 +368,7 @@ async def search_semantic(req: SearchSemanticRequest):
                 memory_embedding
             )
 
-            bonus = keyword_bonus(req.query, item.text)
+            bonus = keyword_bonus(normalized_query, item.text)
             final_score = embedding_score + bonus
 
             scored.append((item.memory_id, final_score))
